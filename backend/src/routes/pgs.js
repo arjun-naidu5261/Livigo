@@ -10,6 +10,7 @@ import { Amenity } from "../models/Amenity.js";
 import { User } from "../models/User.js";
 import { optionalAuth } from "../middleware/auth.js";
 import { formatDoc, formatDocs } from "../utils/helpers.js";
+import { FoodMenu, WEEK_DAYS, defaultWeekMenu } from "../models/FoodMenu.js";
 
 const router = Router();
 
@@ -230,6 +231,32 @@ router.get("/:id/images", async (req, res) => {
   try {
     const images = await PGImage.find({ pg_id: req.params.id }).sort({ display_order: 1 });
     res.json(formatDocs(images));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/:id/food-menu", async (req, res) => {
+  try {
+    const pgId = req.params.id;
+    if (!mongoose.Types.ObjectId.isValid(pgId)) {
+      return res.status(400).json({ error: "Invalid PG id" });
+    }
+
+    const pg = await PG.findOne({ _id: pgId, is_active: true });
+    if (!pg) return res.status(404).json({ error: "PG not found" });
+
+    const menu = await FoodMenu.findOne({ pg_id: pg._id });
+    if (!menu) {
+      return res.json({ pg_id: String(pg._id), ...defaultWeekMenu() });
+    }
+
+    const formatted = formatDoc(menu);
+    const week = {};
+    WEEK_DAYS.forEach((day) => {
+      week[day] = formatted[day] || { breakfast: "", lunch: "", dinner: "" };
+    });
+    res.json({ pg_id: String(pg._id), ...week });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

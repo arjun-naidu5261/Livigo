@@ -38,6 +38,14 @@ export function useFoodMenu(pgId: string) {
   });
 }
 
+export function usePublicFoodMenu(pgId: string) {
+  return useQuery({
+    queryKey: ["public-food-menu", pgId],
+    enabled: !!pgId,
+    queryFn: () => api.pgs.getFoodMenu(pgId) as Promise<WeekMenu & { pg_id: string }>,
+  });
+}
+
 export function useSaveFoodMenu() {
   const queryClient = useQueryClient();
 

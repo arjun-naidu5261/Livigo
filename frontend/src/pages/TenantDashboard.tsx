@@ -1,28 +1,28 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
-  Home, Ticket, IndianRupee, Bell, User, CalendarDays,
-  Plus, CheckCircle, Clock, AlertCircle, Megaphone, CreditCard,
-  FileText, UploadCloud, CheckCircle2, FileUp, XCircle
+  Home, Ticket, CalendarDays, Bell, IndianRupee,
+  Plus, CheckCircle, Clock, Megaphone,
+  FileText, CheckCircle2, FileUp, XCircle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose
 } from "@/components/ui/dialog";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import PGSearchSection from "@/components/PGSearchSection";
 import { useAuth } from "@/contexts/AuthContext";
 import { resolveMediaUrl } from "@/lib/api";
 import {
   useTenantBookings, useTenantPaymentDues, useMarkPaymentPaid,
   useTenantTickets, useCreateTenantTicket,
   useTenantAnnouncements, useRealtimeAnnouncements,
-  useUpdateProfile, useTenantDocuments, useUploadTenantDocument
+  useTenantDocuments, useUploadTenantDocument
 } from "@/hooks/use-tenant";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
@@ -49,8 +49,10 @@ const priorityColors: Record<string, string> = {
 };
 
 const TenantDashboard = () => {
-  const { user, roles, profile } = useAuth();
+  const { user, profile, loading } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const section = searchParams.get("section") || "home";
   const { data: bookings, isLoading: loadingBookings } = useTenantBookings();
   const { data: paymentDues } = useTenantPaymentDues();
   const { data: tickets } = useTenantTickets();
@@ -58,7 +60,6 @@ const TenantDashboard = () => {
   const { data: documents, isLoading: loadingDocs } = useTenantDocuments();
   const markPaid = useMarkPaymentPaid();
   const createTicket = useCreateTenantTicket();
-  const updateProfile = useUpdateProfile();
   const uploadDoc = useUploadTenantDocument();
   useRealtimeAnnouncements();
 
@@ -73,25 +74,52 @@ const TenantDashboard = () => {
   const [payMethod, setPayMethod] = useState("");
   const [payRef, setPayRef] = useState("");
 
-  // Profile form
-  const [editName, setEditName] = useState(profile?.full_name || "");
-  const [editPhone, setEditPhone] = useState(profile?.phone || "");
-
   // Document form
   const [docTitle, setDocTitle] = useState("");
   const [docType, setDocType] = useState("kyc");
   const [docFile, setDocFile] = useState<File | null>(null);
 
-  if (!user) { navigate("/auth"); return null; }
+  const sectionTitle: Record<string, string> = {
+    home: "Home",
+    bookings: "Bookings",
+    payments: "Payments",
+    tickets: "Tickets",
+    docs: "Documents",
+    notices: "Notices",
+  };
+
+  const sectionSubtitle: Record<string, string> = {
+    home: `Welcome back, ${profile?.full_name || "Tenant"}`,
+    bookings: "View and manage your PG bookings",
+    payments: "Track dues and payment history",
+    tickets: "Raise and track support tickets",
+    docs: "Upload and manage your documents",
+    notices: "Announcements from your PG",
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navbar />
+        <div className="pt-20 pb-12 container space-y-4">
+          <Skeleton className="h-10 w-48" />
+          <Skeleton className="h-6 w-64" />
+          <Skeleton className="h-96 rounded-2xl" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    navigate("/auth");
+    return null;
+  }
 
   const activePGs = [...new Set(bookings?.filter((b: any) => b.status === "confirmed" || b.status === "pending").map((b: any) => ({ id: b.pg_id, name: b.pgs?.name })) || [])];
   const uniquePGs = activePGs.reduce((acc: any[], pg: any) => {
     if (!acc.find((p: any) => p.id === pg.id)) acc.push(pg);
     return acc;
   }, []);
-
-  const pendingDues = paymentDues?.filter((d: any) => d.status === "pending" || d.status === "overdue") || [];
-  const totalDue = pendingDues.reduce((sum: number, d: any) => sum + d.amount, 0);
 
   const handleCreateTicket = async () => {
     if (!ticketPgId || !ticketSubject) { toast.error("Select a PG and enter subject"); return; }
@@ -108,13 +136,6 @@ const TenantDashboard = () => {
       await markPaid.mutateAsync({ dueId: payDueId, paymentMethod: payMethod, transactionRef: payRef });
       toast.success("Payment recorded!");
       setPayDueId(""); setPayMethod(""); setPayRef("");
-    } catch (err: any) { toast.error(err.message); }
-  };
-
-  const handleUpdateProfile = async () => {
-    try {
-      await updateProfile.mutateAsync({ fullName: editName, phone: editPhone });
-      toast.success("Profile updated!");
     } catch (err: any) { toast.error(err.message); }
   };
 
@@ -144,12 +165,11 @@ const TenantDashboard = () => {
       <div className="pt-20 pb-12">
         <div className="container">
           <div className="mb-8">
-            <h1 className="text-2xl font-extrabold text-foreground">My Dashboard</h1>
-            <p className="text-sm text-muted-foreground">Welcome back, {profile?.full_name || "Tenant"}</p>
+            <h1 className="text-2xl font-extrabold text-foreground">{sectionTitle[section] || "Home"}</h1>
+            <p className="text-sm text-muted-foreground">{sectionSubtitle[section] || sectionSubtitle.home}</p>
           </div>
 
-          {/* Announcements Banner */}
-          {announcements && announcements.length > 0 && (
+          {section === "home" && announcements && announcements.length > 0 && (
             <div className="mb-6 space-y-2">
               {announcements.slice(0, 3).map((ann: any) => (
                 <div key={ann.id} className="p-4 rounded-xl border border-primary/20 bg-primary/5 flex items-start gap-3">
@@ -167,36 +187,10 @@ const TenantDashboard = () => {
             </div>
           )}
 
-          {/* Stats */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-            {[
-              { label: "Active Bookings", value: bookings?.filter((b: any) => b.status === "confirmed").length || 0, icon: Home },
-              { label: "Open Tickets", value: tickets?.filter((t: any) => t.status === "open" || t.status === "in_progress").length || 0, icon: Ticket },
-              { label: "Pending Dues", value: pendingDues.length, icon: IndianRupee },
-              { label: "Total Due", value: `₹${totalDue.toLocaleString()}`, icon: CreditCard },
-            ].map((stat) => (
-              <div key={stat.label} className="p-4 rounded-2xl border border-border bg-card">
-                <stat.icon className="w-5 h-5 text-primary mb-2" />
-                <p className="text-2xl font-bold text-foreground">{stat.value}</p>
-                <p className="text-xs text-muted-foreground">{stat.label}</p>
-              </div>
-            ))}
-          </div>
+          {section === "home" && <PGSearchSection />}
 
-          {/* Tabs */}
-          <Tabs defaultValue="bookings" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-6">
-              <TabsTrigger value="bookings" className="text-xs sm:text-sm">Bookings</TabsTrigger>
-              <TabsTrigger value="payments" className="text-xs sm:text-sm">Payments</TabsTrigger>
-              <TabsTrigger value="tickets" className="text-xs sm:text-sm">Tickets</TabsTrigger>
-              <TabsTrigger value="documents" className="text-xs sm:text-sm">Docs</TabsTrigger>
-              <TabsTrigger value="notices" className="text-xs sm:text-sm">Notices</TabsTrigger>
-              <TabsTrigger value="profile" className="text-xs sm:text-sm">Profile</TabsTrigger>
-            </TabsList>
-
-            {/* Bookings Tab */}
-            <TabsContent value="bookings">
-              {loadingBookings ? (
+          {section === "bookings" && (
+            loadingBookings ? (
                 <div className="space-y-4">{[1, 2].map((i) => <Skeleton key={i} className="h-28 rounded-2xl" />)}</div>
               ) : bookings && bookings.length > 0 ? (
                 <div className="space-y-3">
@@ -231,14 +225,13 @@ const TenantDashboard = () => {
                   <Home className="w-16 h-16 text-muted-foreground/30 mx-auto mb-4" />
                   <h3 className="text-lg font-semibold text-foreground mb-2">No Bookings Yet</h3>
                   <p className="text-sm text-muted-foreground mb-4">Browse PGs and book a bed to get started</p>
-                  <Button onClick={() => navigate("/search")}>Find a PG</Button>
+                  <Button onClick={() => navigate("/my-dashboard")}>Find a PG</Button>
                 </div>
-              )}
-            </TabsContent>
+              )
+          )}
 
-            {/* Payments Tab */}
-            <TabsContent value="payments">
-              {paymentDues && paymentDues.length > 0 ? (
+          {section === "payments" && (
+            paymentDues && paymentDues.length > 0 ? (
                 <div className="space-y-3">
                   {paymentDues.map((due: any) => (
                     <div key={due.id} className="p-4 rounded-xl border border-border bg-card">
@@ -316,11 +309,11 @@ const TenantDashboard = () => {
                   <h3 className="text-lg font-semibold text-foreground mb-2">No Payment Dues</h3>
                   <p className="text-sm text-muted-foreground">Your payment history and dues will appear here</p>
                 </div>
-              )}
-            </TabsContent>
+              )
+          )}
 
-            {/* Tickets Tab */}
-            <TabsContent value="tickets">
+          {section === "tickets" && (
+            <>
               <div className="flex justify-between items-center mb-4">
                 <h3 className="font-bold text-foreground">My Tickets</h3>
                 <Dialog>
@@ -406,11 +399,11 @@ const TenantDashboard = () => {
                   <p className="text-sm text-muted-foreground">Raise a ticket for maintenance or complaints</p>
                 </div>
               )}
-            </TabsContent>
+            </>
+          )}
 
-            {/* Notices Tab */}
-            <TabsContent value="notices">
-              {announcements && announcements.length > 0 ? (
+          {section === "notices" && (
+            announcements && announcements.length > 0 ? (
                 <div className="space-y-3">
                   {announcements.map((ann: any) => (
                     <div key={ann.id} className="p-5 rounded-2xl border border-border bg-card">
@@ -436,11 +429,11 @@ const TenantDashboard = () => {
                   <h3 className="text-lg font-semibold text-foreground mb-2">No Notices</h3>
                   <p className="text-sm text-muted-foreground">Announcements from your PG will appear here</p>
                 </div>
-              )}
-            </TabsContent>
+              )
+          )}
 
-            {/* Documents Tab */}
-            <TabsContent value="documents">
+          {section === "docs" && (
+            <>
               <div className="flex justify-between items-center mb-4">
                 <h3 className="font-bold text-foreground">My Documents</h3>
                 <Dialog>
@@ -514,69 +507,11 @@ const TenantDashboard = () => {
                   <p className="text-sm text-muted-foreground">Upload your KYC documents or lease agreements here.</p>
                 </div>
               )}
-            </TabsContent>
-
-            {/* Profile Tab */}
-            <TabsContent value="profile">
-              <div className="max-w-md space-y-6">
-                <div className="p-6 rounded-2xl border border-border bg-card space-y-4">
-                  <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-                      <User className="w-8 h-8 text-primary" />
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-foreground">{profile?.full_name || "Tenant"}</h3>
-                      <p className="text-sm text-muted-foreground">{user?.email}</p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-3 pt-4 border-t border-border">
-                    <div className="space-y-2">
-                      <Label>Full Name</Label>
-                      <Input value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Your name" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Phone Number</Label>
-                      <Input value={editPhone} onChange={(e) => setEditPhone(e.target.value)} placeholder="+91 9876543210" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Email</Label>
-                      <Input value={user?.email || ""} disabled className="opacity-60" />
-                    </div>
-                    <Button onClick={handleUpdateProfile} disabled={updateProfile.isPending} className="w-full rounded-xl">
-                      {updateProfile.isPending ? "Saving..." : "Update Profile"}
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Quick Info */}
-                <div className="p-6 rounded-2xl border border-border bg-card space-y-3">
-                  <h4 className="font-bold text-foreground">Account Summary</h4>
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div className="p-3 rounded-xl bg-secondary">
-                      <p className="text-muted-foreground text-xs">Total Bookings</p>
-                      <p className="font-bold text-foreground">{bookings?.length || 0}</p>
-                    </div>
-                    <div className="p-3 rounded-xl bg-secondary">
-                      <p className="text-muted-foreground text-xs">Active</p>
-                      <p className="font-bold text-foreground">{bookings?.filter((b: any) => b.status === "confirmed").length || 0}</p>
-                    </div>
-                    <div className="p-3 rounded-xl bg-secondary">
-                      <p className="text-muted-foreground text-xs">Tickets Raised</p>
-                      <p className="font-bold text-foreground">{tickets?.length || 0}</p>
-                    </div>
-                    <div className="p-3 rounded-xl bg-secondary">
-                      <p className="text-muted-foreground text-xs">Payments Made</p>
-                      <p className="font-bold text-foreground">{paymentDues?.filter((d: any) => d.status === "paid").length || 0}</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </TabsContent>
-          </Tabs>
+            </>
+          )}
         </div>
       </div>
-      <Footer />
+      {section === "home" && <Footer />}
     </div>
   );
 };

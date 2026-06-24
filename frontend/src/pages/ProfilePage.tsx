@@ -33,7 +33,7 @@ const ProfilePage = () => {
   if (loading || !user) return null;
 
   const isOwner = roles.includes("owner");
-  const backTo = isOwner ? "/dashboard" : roles.includes("tenant") ? "/my-dashboard" : "/";
+  const backLabel = isOwner ? "Back to Dashboard" : roles.includes("tenant") ? "Back to Home" : "Back";
 
   const handleUpdateProfile = async () => {
     try {
@@ -171,8 +171,8 @@ const ProfilePage = () => {
               </div>
             </div>
 
-            <Button variant="ghost" onClick={() => navigate(backTo)} className="w-full">
-              Back to Dashboard
+            <Button variant="ghost" onClick={() => navigate(isOwner ? "/dashboard" : roles.includes("tenant") ? "/my-dashboard" : "/")} className="w-full">
+              {backLabel}
             </Button>
           </div>
         </div>

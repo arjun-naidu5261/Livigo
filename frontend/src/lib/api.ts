@@ -78,6 +78,7 @@ export const api = {
     },
     get: (id: string) => request(`/pgs/${id}`),
     images: (id: string) => request(`/pgs/${id}/images`),
+    getFoodMenu: (id: string) => request(`/pgs/${id}/food-menu`),
   },
 
   bookings: {

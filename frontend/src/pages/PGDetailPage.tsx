@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Star, MapPin, Bed, Wifi, Wind, UtensilsCrossed, Shield, ChevronLeft, Heart, Share2, Check } from "lucide-react";
+import { Star, MapPin, Bed, Wifi, Wind, UtensilsCrossed, Shield, ChevronLeft, Heart, Share2, Check, Coffee, Sun, Moon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { motion } from "framer-motion";
 import { usePGDetail, useRealtimeBeds } from "@/hooks/use-pgs";
+import { usePublicFoodMenu, WEEK_DAYS, DAY_LABELS } from "@/hooks/use-food-menu";
 import { useCreateBooking } from "@/hooks/use-bookings";
 import { useAuth } from "@/contexts/AuthContext";
 import { resolveMediaUrl } from "@/lib/api";
@@ -23,6 +24,8 @@ const PGDetailPage = () => {
   const createBooking = useCreateBooking();
   const [selectedRoom, setSelectedRoom] = useState<string>("");
   const [moveInDate, setMoveInDate] = useState("");
+  const [roomsTab, setRoomsTab] = useState<"rooms" | "food">("rooms");
+  const { data: foodMenu, isLoading: foodMenuLoading } = usePublicFoodMenu(id || "");
 
   // Real-time bed updates
   useRealtimeBeds(id);
@@ -68,6 +71,13 @@ const PGDetailPage = () => {
   const avgRating = reviews.length > 0 ? (reviews.reduce((s: number, r: any) => s + r.rating, 0) / reviews.length).toFixed(1) : "0";
 
   const genderLabel: Record<string, string> = { boys: "Boys", girls: "Girls", coliving: "Co-living" };
+
+  const hasFoodMenu = foodMenu && WEEK_DAYS.some((day) => {
+    const d = foodMenu[day];
+    return d?.breakfast || d?.lunch || d?.dinner;
+  });
+
+  const mealIcons = { breakfast: Coffee, lunch: Sun, dinner: Moon };
 
   const handleBook = async () => {
     if (!user) { navigate("/auth"); return; }
@@ -181,38 +191,113 @@ const PGDetailPage = () => {
                 </div>
               )}
 
-              {/* Room Types */}
-              {rooms.length > 0 && (
+              {/* Room Types & Food Menu */}
+              {(rooms.length > 0 || hasFoodMenu || foodMenuLoading) && (
                 <div>
                   <h2 className="text-lg font-bold text-foreground mb-3">Available Rooms</h2>
-                  <div className="space-y-3">
-                    {rooms.map((room: any) => (
-                      <div
-                        key={room.id}
-                        onClick={() => room.available_beds > 0 && setSelectedRoom(room.id)}
-                        className={`flex items-center justify-between p-4 rounded-xl border cursor-pointer transition-all ${
-                          selectedRoom === room.id ? "border-primary bg-primary/5 ring-1 ring-primary" : room.available_beds > 0 ? "border-border bg-card hover:border-primary/50" : "border-border/50 bg-muted/50 opacity-60 cursor-not-allowed"
-                        }`}
-                      >
-                        <div>
-                          <h4 className="font-semibold text-foreground">{room.name}</h4>
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
-                            <Bed className="w-3 h-3" />
-                            {room.available_beds > 0 ? (
-                              <span className="text-success font-medium">{room.available_beds} of {room.beds.length} beds available</span>
-                            ) : (
-                              "No beds available"
-                            )}
-                            {room.has_ac && <Badge variant="secondary" className="text-xs">AC</Badge>}
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-bold text-lg text-foreground">₹{room.price_per_month.toLocaleString()}</p>
-                          <p className="text-xs text-muted-foreground">/month</p>
-                        </div>
-                      </div>
-                    ))}
+                  <div className="flex gap-2 mb-4">
+                    <button
+                      type="button"
+                      onClick={() => setRoomsTab("rooms")}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+                        roomsTab === "rooms"
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-secondary text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <Bed className="w-4 h-4" /> Rooms
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRoomsTab("food")}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+                        roomsTab === "food"
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-secondary text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <UtensilsCrossed className="w-4 h-4" /> Food Menu
+                    </button>
                   </div>
+
+                  {roomsTab === "rooms" ? (
+                    rooms.length > 0 ? (
+                      <div className="space-y-3">
+                        {rooms.map((room: any) => (
+                          <div
+                            key={room.id}
+                            onClick={() => room.available_beds > 0 && setSelectedRoom(room.id)}
+                            className={`flex items-center justify-between p-4 rounded-xl border cursor-pointer transition-all ${
+                              selectedRoom === room.id ? "border-primary bg-primary/5 ring-1 ring-primary" : room.available_beds > 0 ? "border-border bg-card hover:border-primary/50" : "border-border/50 bg-muted/50 opacity-60 cursor-not-allowed"
+                            }`}
+                          >
+                            <div>
+                              <h4 className="font-semibold text-foreground">{room.name}</h4>
+                              <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
+                                <Bed className="w-3 h-3" />
+                                {room.available_beds > 0 ? (
+                                  <span className="text-success font-medium">{room.available_beds} of {room.beds.length} beds available</span>
+                                ) : (
+                                  "No beds available"
+                                )}
+                                {room.has_ac && <Badge variant="secondary" className="text-xs">AC</Badge>}
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-bold text-lg text-foreground">₹{room.price_per_month.toLocaleString()}</p>
+                              <p className="text-xs text-muted-foreground">/month</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-12 rounded-xl border border-border bg-card">
+                        <Bed className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
+                        <p className="text-sm text-muted-foreground">No rooms listed yet</p>
+                      </div>
+                    )
+                  ) : foodMenuLoading ? (
+                    <div className="space-y-3">
+                      {WEEK_DAYS.map((day) => <Skeleton key={day} className="h-20 rounded-xl" />)}
+                    </div>
+                  ) : hasFoodMenu ? (
+                    <div className="rounded-2xl border border-border bg-card overflow-hidden">
+                      <div className="hidden sm:grid sm:grid-cols-4 gap-4 p-4 bg-secondary/50 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                        <span>Day</span>
+                        <span>Breakfast</span>
+                        <span>Lunch</span>
+                        <span>Dinner</span>
+                      </div>
+                      <div className="divide-y divide-border">
+                        {WEEK_DAYS.map((day) => (
+                          <div key={day} className="p-4 sm:grid sm:grid-cols-4 gap-4 sm:items-start">
+                            <div className="flex items-center gap-2 mb-3 sm:mb-0">
+                              <UtensilsCrossed className="w-4 h-4 text-primary shrink-0" />
+                              <span className="font-semibold text-foreground">{DAY_LABELS[day]}</span>
+                            </div>
+                            {(["breakfast", "lunch", "dinner"] as const).map((meal) => {
+                              const MealIcon = mealIcons[meal];
+                              const value = foodMenu?.[day]?.[meal];
+                              return (
+                                <div key={meal} className="mb-3 sm:mb-0 last:mb-0">
+                                  <div className="flex items-center gap-1.5 mb-1 sm:hidden">
+                                    <MealIcon className="w-3.5 h-3.5 text-muted-foreground" />
+                                    <span className="text-xs font-medium text-muted-foreground capitalize">{meal}</span>
+                                  </div>
+                                  <p className="text-sm text-foreground">{value || "—"}</p>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 rounded-xl border border-border bg-card">
+                      <UtensilsCrossed className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
+                      <p className="text-sm text-muted-foreground">No food menu published for this hostel yet</p>
+                    </div>
+                  )}
                 </div>
               )}
 
