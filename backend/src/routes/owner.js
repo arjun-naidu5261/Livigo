@@ -8,10 +8,12 @@ import { PGImage } from "../models/PGImage.js";
 import { Room } from "../models/Room.js";
 import { RoomImage } from "../models/RoomImage.js";
 import { Bed } from "../models/Bed.js";
+import { GuestCheckIn } from "../models/GuestCheckIn.js";
 import { Booking } from "../models/Booking.js";
 import { Ticket } from "../models/Ticket.js";
 import { PaymentDue } from "../models/PaymentDue.js";
 import { Announcement } from "../models/Announcement.js";
+import { FoodMenu, WEEK_DAYS, defaultWeekMenu } from "../models/FoodMenu.js";
 import { User } from "../models/User.js";
 import { authenticate, requireRole } from "../middleware/auth.js";
 import { formatDoc, formatDocs } from "../utils/helpers.js";
@@ -49,11 +51,23 @@ async function getOwnerPGs(userId) {
 
     const roomIds = rooms.map((r) => r._id);
     const beds = await Bed.find({ room_id: { $in: roomIds } });
+    const bedIds = beds.map((b) => b._id);
+    const activeCheckIns = bedIds.length
+      ? await GuestCheckIn.find({ bed_id: { $in: bedIds }, status: "active" })
+      : [];
+    const checkInByBed = {};
+    activeCheckIns.forEach((c) => {
+      checkInByBed[String(c.bed_id)] = formatDoc(c);
+    });
+
     const bedsByRoom = {};
     beds.forEach((b) => {
       const key = String(b.room_id);
       if (!bedsByRoom[key]) bedsByRoom[key] = [];
-      bedsByRoom[key].push(formatDoc(b));
+      bedsByRoom[key].push({
+        ...formatDoc(b),
+        guest: checkInByBed[String(b._id)] || null,
+      });
     });
 
     result.push({
@@ -231,6 +245,133 @@ router.patch("/beds/:id", async (req, res) => {
     bed.status = req.body.newStatus || req.body.status;
     await bed.save();
     res.json(formatDoc(bed));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/beds/:id/check-in", async (req, res) => {
+  try {
+    const { guestName, guestPhone, advancePaid, checkInDate } = req.body;
+    if (!guestName?.trim() || !guestPhone?.trim()) {
+      return res.status(400).json({ error: "Guest name and phone are required" });
+    }
+
+    const bed = await Bed.findById(req.params.id);
+    if (!bed) return res.status(404).json({ error: "Bed not found" });
+    if (bed.status === "occupied") {
+      return res.status(400).json({ error: "Bed is already occupied" });
+    }
+    if (bed.status === "locked") {
+      return res.status(400).json({ error: "Bed is locked for booking" });
+    }
+
+    const room = await Room.findById(bed.room_id);
+    if (!room) return res.status(404).json({ error: "Room not found" });
+
+    const pg = await PG.findOne({ _id: room.pg_id, owner_id: req.userId });
+    if (!pg) return res.status(403).json({ error: "Not authorized" });
+
+    const existing = await GuestCheckIn.findOne({ bed_id: bed._id, status: "active" });
+    if (existing) {
+      return res.status(400).json({ error: "This bed already has an active guest" });
+    }
+
+    const checkIn = await GuestCheckIn.create({
+      bed_id: bed._id,
+      room_id: room._id,
+      pg_id: pg._id,
+      owner_id: req.userId,
+      guest_name: guestName.trim(),
+      guest_phone: guestPhone.trim(),
+      advance_paid: Number(advancePaid) || 0,
+      check_in_date: checkInDate || new Date().toISOString().slice(0, 10),
+    });
+
+    bed.status = "occupied";
+    await bed.save();
+
+    res.status(201).json({
+      ...formatDoc(checkIn),
+      bed: formatDoc(bed),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/beds/:id/check-out", async (req, res) => {
+  try {
+    const bed = await Bed.findById(req.params.id);
+    if (!bed) return res.status(404).json({ error: "Bed not found" });
+
+    const room = await Room.findById(bed.room_id);
+    const pg = await PG.findOne({ _id: room.pg_id, owner_id: req.userId });
+    if (!pg) return res.status(403).json({ error: "Not authorized" });
+
+    const checkIn = await GuestCheckIn.findOne({ bed_id: bed._id, status: "active" });
+    if (!checkIn) {
+      return res.status(404).json({ error: "No active guest on this bed" });
+    }
+
+    await GuestCheckIn.deleteOne({ _id: checkIn._id });
+
+    bed.status = "available";
+    bed.occupied_by = null;
+    await bed.save();
+
+    res.json({ message: "Guest removed", bed: formatDoc(bed) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete("/beds/:id/guest", async (req, res) => {
+  try {
+    const bed = await Bed.findById(req.params.id);
+    if (!bed) return res.status(404).json({ error: "Bed not found" });
+
+    const room = await Room.findById(bed.room_id);
+    const pg = await PG.findOne({ _id: room.pg_id, owner_id: req.userId });
+    if (!pg) return res.status(403).json({ error: "Not authorized" });
+
+    const checkIn = await GuestCheckIn.findOne({ bed_id: bed._id, status: "active" });
+    if (!checkIn) {
+      return res.status(404).json({ error: "No guest on this bed" });
+    }
+
+    await GuestCheckIn.deleteOne({ _id: checkIn._id });
+
+    bed.status = "available";
+    bed.occupied_by = null;
+    await bed.save();
+
+    res.json({ message: "Guest deleted", bed: formatDoc(bed) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete("/rooms/:id", async (req, res) => {
+  try {
+    const room = await Room.findById(req.params.id);
+    if (!room) return res.status(404).json({ error: "Room not found" });
+
+    const pg = await PG.findOne({ _id: room.pg_id, owner_id: req.userId });
+    if (!pg) return res.status(403).json({ error: "Not authorized" });
+
+    const beds = await Bed.find({ room_id: room._id });
+    const bedIds = beds.map((b) => b._id);
+
+    await Promise.all([
+      GuestCheckIn.deleteMany({ bed_id: { $in: bedIds } }),
+      Booking.deleteMany({ room_id: room._id }),
+      Bed.deleteMany({ room_id: room._id }),
+      RoomImage.deleteMany({ room_id: room._id }),
+    ]);
+
+    await room.deleteOne();
+    res.json({ message: "Room deleted" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -434,6 +575,66 @@ router.delete("/announcements/:id", async (req, res) => {
 
     await announcement.deleteOne();
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/pgs/:pgId/food-menu", async (req, res) => {
+  try {
+    const pg = await PG.findOne({ _id: req.params.pgId, owner_id: req.userId });
+    if (!pg) return res.status(404).json({ error: "PG not found" });
+
+    const menu = await FoodMenu.findOne({ pg_id: pg._id });
+    if (!menu) {
+      return res.json({
+        pg_id: String(pg._id),
+        ...defaultWeekMenu(),
+      });
+    }
+
+    const formatted = formatDoc(menu);
+    const week = {};
+    WEEK_DAYS.forEach((day) => {
+      week[day] = formatted[day] || { breakfast: "", lunch: "", dinner: "" };
+    });
+    res.json({ pg_id: String(pg._id), ...week });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put("/pgs/:pgId/food-menu", async (req, res) => {
+  try {
+    const pg = await PG.findOne({ _id: req.params.pgId, owner_id: req.userId });
+    if (!pg) return res.status(404).json({ error: "PG not found" });
+
+    const { weekMenu } = req.body;
+    if (!weekMenu) {
+      return res.status(400).json({ error: "weekMenu is required" });
+    }
+
+    const update = { owner_id: req.userId, pg_id: pg._id };
+    WEEK_DAYS.forEach((day) => {
+      update[day] = {
+        breakfast: weekMenu[day]?.breakfast || "",
+        lunch: weekMenu[day]?.lunch || "",
+        dinner: weekMenu[day]?.dinner || "",
+      };
+    });
+
+    const menu = await FoodMenu.findOneAndUpdate(
+      { pg_id: pg._id },
+      update,
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+
+    const formatted = formatDoc(menu);
+    const week = {};
+    WEEK_DAYS.forEach((day) => {
+      week[day] = formatted[day] || { breakfast: "", lunch: "", dinner: "" };
+    });
+    res.json({ pg_id: String(pg._id), ...week });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

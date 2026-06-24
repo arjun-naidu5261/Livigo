@@ -1,121 +1,143 @@
-import { useState, useRef } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import Navbar from "@/components/Navbar";
 import { useAuth } from "@/contexts/AuthContext";
-import { useCreatePG, useAmenities } from "@/hooks/use-owner";
+import { useCreatePG } from "@/hooks/use-owner";
 import { toast } from "sonner";
-import { Plus, Trash2, Upload, Image, X } from "lucide-react";
+import { Upload, X } from "lucide-react";
 
-interface RoomInput {
-  name: string;
-  sharingType: number;
-  pricePerMonth: number;
-  totalBeds: number;
-  hasAc: boolean;
-  images: File[];
-  imagePreviews: string[];
+const DEFAULT_PRICES: Record<number, number> = { 2: 9000, 3: 7500, 4: 6500 };
+
+type RoomCounts = { ac: number; nonAc: number };
+
+const emptyCounts = (): Record<2 | 3 | 4, RoomCounts> => ({
+  2: { ac: 0, nonAc: 0 },
+  3: { ac: 0, nonAc: 0 },
+  4: { ac: 0, nonAc: 0 },
+});
+
+function buildRooms(counts: Record<2 | 3 | 4, RoomCounts>) {
+  const rooms: {
+    name: string;
+    sharingType: number;
+    pricePerMonth: number;
+    totalBeds: number;
+    hasAc: boolean;
+    images: File[];
+  }[] = [];
+
+  ([2, 3, 4] as const).forEach((sharing) => {
+    const { ac, nonAc } = counts[sharing];
+    for (let i = 0; i < ac; i++) {
+      rooms.push({
+        name: `${sharing}-Share AC Room ${i + 1}`,
+        sharingType: sharing,
+        pricePerMonth: DEFAULT_PRICES[sharing] + 2000,
+        totalBeds: sharing,
+        hasAc: true,
+        images: [],
+      });
+    }
+    for (let i = 0; i < nonAc; i++) {
+      rooms.push({
+        name: `${sharing}-Share Non-AC Room ${i + 1}`,
+        sharingType: sharing,
+        pricePerMonth: DEFAULT_PRICES[sharing],
+        totalBeds: sharing,
+        hasAc: false,
+        images: [],
+      });
+    }
+  });
+
+  return rooms;
 }
 
 const ListProperty = () => {
   const navigate = useNavigate();
   const { user, roles } = useAuth();
   const createPG = useCreatePG();
-  const { data: amenitiesList } = useAmenities();
-  const buildingImgRef = useRef<HTMLInputElement>(null);
 
   const [name, setName] = useState("");
+  const [location, setLocation] = useState("");
   const [description, setDescription] = useState("");
-  const [address, setAddress] = useState("");
-  const [city, setCity] = useState("");
-  const [area, setArea] = useState("");
   const [gender, setGender] = useState<"boys" | "girls" | "coliving">("coliving");
-  const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
-  const [rules, setRules] = useState<string[]>([""]);
+  const [roomCounts, setRoomCounts] = useState(emptyCounts);
   const [buildingImages, setBuildingImages] = useState<File[]>([]);
-  const [buildingPreviews, setBuildingPreviews] = useState<string[]>([]);
-  const [rooms, setRooms] = useState<RoomInput[]>([
-    { name: "Single Room", sharingType: 1, pricePerMonth: 10000, totalBeds: 1, hasAc: false, images: [], imagePreviews: [] },
-  ]);
+  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
+  const updateCount = (sharing: 2 | 3 | 4, type: "ac" | "nonAc", value: number) => {
+    setRoomCounts((prev) => ({
+      ...prev,
+      [sharing]: { ...prev[sharing], [type]: Math.max(0, value) },
+    }));
+  };
+
+  const totals = useMemo(() => {
+    let ac = 0;
+    let nonAc = 0;
+    let totalBeds = 0;
+    ([2, 3, 4] as const).forEach((s) => {
+      ac += roomCounts[s].ac;
+      nonAc += roomCounts[s].nonAc;
+      totalBeds += (roomCounts[s].ac + roomCounts[s].nonAc) * s;
+    });
+    return { ac, nonAc, rooms: ac + nonAc, beds: totalBeds };
+  }, [roomCounts]);
 
   if (!user) { navigate("/auth"); return null; }
   if (!roles.includes("owner")) { navigate("/auth"); return null; }
 
-  const handleBuildingImages = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImages = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
+    if (!files.length) return;
     setBuildingImages((prev) => [...prev, ...files]);
-    const previews = files.map((f) => URL.createObjectURL(f));
-    setBuildingPreviews((prev) => [...prev, ...previews]);
+    setImagePreviews((prev) => [...prev, ...files.map((f) => URL.createObjectURL(f))]);
+    e.target.value = "";
   };
 
-  const removeBuildingImage = (index: number) => {
+  const removeImage = (index: number) => {
+    URL.revokeObjectURL(imagePreviews[index]);
     setBuildingImages((prev) => prev.filter((_, i) => i !== index));
-    setBuildingPreviews((prev) => {
-      URL.revokeObjectURL(prev[index]);
-      return prev.filter((_, i) => i !== index);
-    });
-  };
-
-  const handleRoomImages = (roomIndex: number, e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    const previews = files.map((f) => URL.createObjectURL(f));
-    const updated = [...rooms];
-    updated[roomIndex].images = [...updated[roomIndex].images, ...files];
-    updated[roomIndex].imagePreviews = [...updated[roomIndex].imagePreviews, ...previews];
-    setRooms(updated);
-  };
-
-  const removeRoomImage = (roomIndex: number, imgIndex: number) => {
-    const updated = [...rooms];
-    updated[roomIndex].images = updated[roomIndex].images.filter((_, i) => i !== imgIndex);
-    URL.revokeObjectURL(updated[roomIndex].imagePreviews[imgIndex]);
-    updated[roomIndex].imagePreviews = updated[roomIndex].imagePreviews.filter((_, i) => i !== imgIndex);
-    setRooms(updated);
-  };
-
-  const addRoom = () => {
-    setRooms([...rooms, { name: "", sharingType: 2, pricePerMonth: 8000, totalBeds: 2, hasAc: false, images: [], imagePreviews: [] }]);
-  };
-
-  const updateRoom = (index: number, field: keyof RoomInput, value: any) => {
-    const updated = [...rooms];
-    (updated[index] as any)[field] = value;
-    setRooms(updated);
-  };
-
-  const removeRoom = (index: number) => {
-    if (rooms.length === 1) return;
-    setRooms(rooms.filter((_, i) => i !== index));
+    setImagePreviews((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !address || !city || rooms.length === 0) {
-      toast.error("Please fill in all required fields");
+
+    if (!name.trim() || !location.trim()) {
+      toast.error("Hostel name and location are required");
+      return;
+    }
+    if (totals.rooms === 0) {
+      toast.error("Add at least one room (AC or Non-AC)");
       return;
     }
 
+    const rooms = buildRooms(roomCounts);
+
     try {
       await createPG.mutateAsync({
-        name,
-        description,
-        address,
-        city,
-        area,
+        name: name.trim(),
+        description: description.trim(),
+        address: location.trim(),
+        city: location.trim(),
+        area: "",
         gender,
-        amenityIds: selectedAmenities,
-        rules: rules.filter((r) => r.trim()),
-        rooms: rooms.filter((r) => r.name && r.pricePerMonth > 0),
+        amenityIds: [],
+        rules: [],
+        rooms,
         buildingImages,
       });
-      toast.success("PG listed successfully! 🎉");
-      navigate("/dashboard");
+      toast.success("Hostel added successfully!");
+      navigate("/dashboard?section=hostels");
     } catch (err: any) {
-      toast.error(err.message || "Failed to list PG");
+      toast.error(err.message || "Failed to add hostel");
     }
   };
 
@@ -124,45 +146,58 @@ const ListProperty = () => {
       <Navbar />
       <div className="pt-20 pb-12">
         <div className="container max-w-2xl">
-          <h1 className="text-2xl font-extrabold text-foreground mb-2">List Your PG</h1>
-          <p className="text-sm text-muted-foreground mb-8">Fill in the details to list your property on Livigo</p>
+          <h1 className="text-2xl font-extrabold text-foreground mb-2">Add Hostel</h1>
+          <p className="text-sm text-muted-foreground mb-8">Enter basic details and room breakdown</p>
 
-          <form onSubmit={handleSubmit} className="space-y-8">
-            {/* Basic Info */}
+          <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-4 p-6 rounded-2xl border border-border bg-card">
-              <h2 className="text-lg font-bold text-foreground">Basic Information</h2>
+              <h2 className="text-lg font-bold text-foreground">Basic Details</h2>
+
               <div className="space-y-2">
-                <Label htmlFor="pg-name">PG Name *</Label>
-                <Input id="pg-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Sunrise Co-Living" required />
+                <Label htmlFor="hostel-name">Hostel Name *</Label>
+                <Input
+                  id="hostel-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Sunrise Boys Hostel"
+                  required
+                />
               </div>
+
               <div className="space-y-2">
-                <Label htmlFor="desc">Description</Label>
-                <Textarea id="desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Tell tenants about your property..." rows={3} />
+                <Label htmlFor="location">Location *</Label>
+                <Input
+                  id="location"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  placeholder="e.g. Koramangala, Bangalore"
+                  required
+                />
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>City *</Label>
-                  <Input value={city} onChange={(e) => setCity(e.target.value)} placeholder="Bangalore" required />
-                </div>
-                <div className="space-y-2">
-                  <Label>Area</Label>
-                  <Input value={area} onChange={(e) => setArea(e.target.value)} placeholder="Koramangala" />
-                </div>
-              </div>
+
               <div className="space-y-2">
-                <Label>Address *</Label>
-                <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Full address" required />
+                <Label htmlFor="description">Description</Label>
+                <Textarea
+                  id="description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Brief description about your hostel..."
+                  rows={3}
+                />
               </div>
+
               <div className="space-y-2">
-                <Label>Gender</Label>
-                <div className="flex gap-3">
+                <Label>Type of Hostel *</Label>
+                <div className="flex flex-wrap gap-3">
                   {(["boys", "girls", "coliving"] as const).map((g) => (
                     <button
                       key={g}
                       type="button"
                       onClick={() => setGender(g)}
                       className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                        gender === g ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground hover:text-foreground"
+                        gender === g
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-secondary text-muted-foreground hover:text-foreground"
                       }`}
                     >
                       {g === "boys" ? "Boys" : g === "girls" ? "Girls" : "Co-living"}
@@ -172,25 +207,105 @@ const ListProperty = () => {
               </div>
             </div>
 
-            {/* Building Images */}
             <div className="space-y-4 p-6 rounded-2xl border border-border bg-card">
-              <h2 className="text-lg font-bold text-foreground">Building / Property Images</h2>
-              <p className="text-sm text-muted-foreground">Upload exterior, lobby, common areas, etc.</p>
+              <div>
+                <h2 className="text-lg font-bold text-foreground">Rooms by Type & Sharing</h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Enter how many AC and Non-AC rooms you have for each sharing type
+                </p>
+              </div>
+
+              <div className="overflow-x-auto rounded-xl border border-border">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-secondary/50 border-b border-border">
+                      <th className="text-left p-3 font-semibold text-foreground">Sharing Type</th>
+                      <th className="text-center p-3 font-semibold text-foreground">AC Rooms</th>
+                      <th className="text-center p-3 font-semibold text-foreground">Non-AC Rooms</th>
+                      <th className="text-center p-3 font-semibold text-foreground">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {([2, 3, 4] as const).map((sharing) => {
+                      const row = roomCounts[sharing];
+                      const rowTotal = row.ac + row.nonAc;
+                      return (
+                        <tr key={sharing} className="border-b border-border last:border-0">
+                          <td className="p-3 font-medium text-foreground">{sharing} Share</td>
+                          <td className="p-3">
+                            <Input
+                              type="number"
+                              min={0}
+                              value={row.ac || ""}
+                              onChange={(e) => updateCount(sharing, "ac", parseInt(e.target.value) || 0)}
+                              placeholder="0"
+                              className="text-center h-9"
+                            />
+                          </td>
+                          <td className="p-3">
+                            <Input
+                              type="number"
+                              min={0}
+                              value={row.nonAc || ""}
+                              onChange={(e) => updateCount(sharing, "nonAc", parseInt(e.target.value) || 0)}
+                              placeholder="0"
+                              className="text-center h-9"
+                            />
+                          </td>
+                          <td className="p-3 text-center font-semibold text-muted-foreground">{rowTotal}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-secondary/30">
+                      <td className="p-3 font-bold text-foreground">Total</td>
+                      <td className="p-3 text-center font-bold text-primary">{totals.ac}</td>
+                      <td className="p-3 text-center font-bold text-primary">{totals.nonAc}</td>
+                      <td className="p-3 text-center font-bold text-foreground">{totals.rooms}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3 pt-2">
+                <div className="p-3 rounded-xl bg-primary/10 text-center">
+                  <p className="text-xl font-bold text-primary">{totals.ac}</p>
+                  <p className="text-xs text-muted-foreground">AC Rooms</p>
+                </div>
+                <div className="p-3 rounded-xl bg-secondary text-center">
+                  <p className="text-xl font-bold text-foreground">{totals.nonAc}</p>
+                  <p className="text-xs text-muted-foreground">Non-AC Rooms</p>
+                </div>
+                <div className="p-3 rounded-xl bg-success/10 text-center">
+                  <p className="text-xl font-bold text-success">{totals.beds}</p>
+                  <p className="text-xs text-muted-foreground">Total Beds</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4 p-6 rounded-2xl border border-border bg-card">
+              <div>
+                <h2 className="text-lg font-bold text-foreground">Hostel Images</h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Upload photos of your hostel (exterior, rooms, common areas)
+                </p>
+              </div>
               <input
-                ref={buildingImgRef}
+                ref={imageInputRef}
                 type="file"
                 accept="image/*"
                 multiple
-                onChange={handleBuildingImages}
+                onChange={handleImages}
                 className="hidden"
               />
               <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-                {buildingPreviews.map((src, i) => (
-                  <div key={i} className="relative aspect-square rounded-xl overflow-hidden border border-border group">
-                    <img src={src} alt={`Building ${i + 1}`} className="w-full h-full object-cover" />
+                {imagePreviews.map((src, i) => (
+                  <div key={src} className="relative aspect-square rounded-xl overflow-hidden border border-border group">
+                    <img src={src} alt={`Hostel ${i + 1}`} className="w-full h-full object-cover" />
                     <button
                       type="button"
-                      onClick={() => removeBuildingImage(i)}
+                      onClick={() => removeImage(i)}
                       className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
                     >
                       <X className="w-3 h-3" />
@@ -199,152 +314,28 @@ const ListProperty = () => {
                 ))}
                 <button
                   type="button"
-                  onClick={() => buildingImgRef.current?.click()}
+                  onClick={() => imageInputRef.current?.click()}
                   className="aspect-square rounded-xl border-2 border-dashed border-border hover:border-primary/50 flex flex-col items-center justify-center gap-1 text-muted-foreground hover:text-primary transition-colors"
                 >
                   <Upload className="w-5 h-5" />
-                  <span className="text-xs">Add</span>
+                  <span className="text-xs">Add Photos</span>
                 </button>
               </div>
             </div>
 
-            {/* Amenities */}
-            <div className="space-y-4 p-6 rounded-2xl border border-border bg-card">
-              <h2 className="text-lg font-bold text-foreground">Amenities</h2>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {amenitiesList?.map((a) => (
-                  <label key={a.id} className="flex items-center gap-2 cursor-pointer">
-                    <Checkbox
-                      checked={selectedAmenities.includes(a.id)}
-                      onCheckedChange={(checked) =>
-                        setSelectedAmenities((prev) =>
-                          checked ? [...prev, a.id] : prev.filter((id) => id !== a.id)
-                        )
-                      }
-                    />
-                    <span className="text-sm text-foreground">{a.name}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {/* Rooms */}
-            <div className="space-y-4 p-6 rounded-2xl border border-border bg-card">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-bold text-foreground">Rooms</h2>
-                <Button type="button" variant="outline" size="sm" onClick={addRoom}>
-                  <Plus className="w-4 h-4 mr-1" /> Add Room
-                </Button>
-              </div>
-              {rooms.map((room, i) => (
-                <div key={i} className="p-4 rounded-xl border border-border space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-sm font-semibold text-foreground">Room {i + 1}</h4>
-                    {rooms.length > 1 && (
-                      <button type="button" onClick={() => removeRoom(i)} className="text-destructive hover:text-destructive/80">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <Label className="text-xs">Room Name</Label>
-                      <Input value={room.name} onChange={(e) => updateRoom(i, "name", e.target.value)} placeholder="Single Room" />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Sharing Type</Label>
-                      <select
-                        value={room.sharingType}
-                        onChange={(e) => updateRoom(i, "sharingType", parseInt(e.target.value))}
-                        className="w-full px-3 py-2 rounded-lg bg-secondary border border-border text-sm text-foreground"
-                      >
-                        <option value={1}>Single</option>
-                        <option value={2}>Double</option>
-                        <option value={3}>Triple</option>
-                        <option value={4}>4-Sharing</option>
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Price/Month (₹)</Label>
-                      <Input type="number" value={room.pricePerMonth} onChange={(e) => updateRoom(i, "pricePerMonth", parseInt(e.target.value) || 0)} />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Total Beds</Label>
-                      <Input type="number" value={room.totalBeds} onChange={(e) => updateRoom(i, "totalBeds", parseInt(e.target.value) || 1)} min={1} />
-                    </div>
-                  </div>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <Checkbox checked={room.hasAc} onCheckedChange={(checked) => updateRoom(i, "hasAc", !!checked)} />
-                    <span className="text-sm text-foreground">Has AC</span>
-                  </label>
-
-                  {/* Room Images */}
-                  <div className="space-y-2">
-                    <Label className="text-xs flex items-center gap-1"><Image className="w-3 h-3" /> Room / Bed Photos</Label>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      id={`room-img-${i}`}
-                      onChange={(e) => handleRoomImages(i, e)}
-                      className="hidden"
-                    />
-                    <div className="flex flex-wrap gap-2">
-                      {room.imagePreviews.map((src, j) => (
-                        <div key={j} className="relative w-16 h-16 rounded-lg overflow-hidden border border-border group">
-                          <img src={src} alt={`Room ${i + 1} - ${j + 1}`} className="w-full h-full object-cover" />
-                          <button
-                            type="button"
-                            onClick={() => removeRoomImage(i, j)}
-                            className="absolute top-0.5 right-0.5 bg-destructive text-destructive-foreground rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                          >
-                            <X className="w-2.5 h-2.5" />
-                          </button>
-                        </div>
-                      ))}
-                      <button
-                        type="button"
-                        onClick={() => document.getElementById(`room-img-${i}`)?.click()}
-                        className="w-16 h-16 rounded-lg border-2 border-dashed border-border hover:border-primary/50 flex flex-col items-center justify-center text-muted-foreground hover:text-primary transition-colors"
-                      >
-                        <Upload className="w-3 h-3" />
-                        <span className="text-[10px]">Add</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Rules */}
-            <div className="space-y-4 p-6 rounded-2xl border border-border bg-card">
-              <h2 className="text-lg font-bold text-foreground">House Rules</h2>
-              {rules.map((rule, i) => (
-                <div key={i} className="flex gap-2">
-                  <Input
-                    value={rule}
-                    onChange={(e) => {
-                      const updated = [...rules];
-                      updated[i] = e.target.value;
-                      setRules(updated);
-                    }}
-                    placeholder={`Rule ${i + 1}`}
-                  />
-                  {rules.length > 1 && (
-                    <button type="button" onClick={() => setRules(rules.filter((_, j) => j !== i))} className="text-destructive">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-              ))}
-              <Button type="button" variant="outline" size="sm" onClick={() => setRules([...rules, ""])}>
-                <Plus className="w-4 h-4 mr-1" /> Add Rule
+            <div className="flex gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1 rounded-xl"
+                onClick={() => navigate("/dashboard?section=hostels")}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" className="flex-1 rounded-xl" disabled={createPG.isPending}>
+                {createPG.isPending ? "Saving..." : "Add Hostel"}
               </Button>
             </div>
-
-            <Button type="submit" size="lg" className="w-full rounded-xl text-base" disabled={createPG.isPending}>
-              {createPG.isPending ? "Creating..." : "List My PG"}
-            </Button>
           </form>
         </div>
       </div>

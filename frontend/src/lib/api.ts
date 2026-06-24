@@ -59,6 +59,16 @@ export const api = {
         body: JSON.stringify(body),
       }),
     me: () => request<{ user: import("@/types").AuthUser }>("/auth/me"),
+    updateProfile: (body: { fullName?: string; phone?: string }) =>
+      request<{ user: import("@/types").AuthUser }>("/auth/profile", {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
+    changePassword: (body: { currentPassword: string; newPassword: string }) =>
+      request<{ message: string }>("/auth/password", {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
   },
 
   pgs: {
@@ -101,6 +111,19 @@ export const api = {
       request(`/owner/rooms/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
     updateBed: (id: string, body: { newStatus: string }) =>
       request(`/owner/beds/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+    checkInGuest: (bedId: string, body: {
+      guestName: string;
+      guestPhone: string;
+      advancePaid: number;
+      checkInDate?: string;
+    }) =>
+      request(`/owner/beds/${bedId}/check-in`, { method: "POST", body: JSON.stringify(body) }),
+    checkOutGuest: (bedId: string) =>
+      request(`/owner/beds/${bedId}/check-out`, { method: "POST" }),
+    deleteBedGuest: (bedId: string) =>
+      request(`/owner/beds/${bedId}/guest`, { method: "DELETE" }),
+    deleteRoom: (id: string) =>
+      request(`/owner/rooms/${id}`, { method: "DELETE" }),
     bookings: () => request("/owner/bookings"),
     tickets: () => request("/owner/tickets"),
     createTicket: (body: Record<string, unknown>) =>
@@ -117,6 +140,9 @@ export const api = {
       request("/owner/announcements", { method: "POST", body: JSON.stringify(body) }),
     deleteAnnouncement: (id: string) =>
       request(`/owner/announcements/${id}`, { method: "DELETE" }),
+    getFoodMenu: (pgId: string) => request(`/owner/pgs/${pgId}/food-menu`),
+    saveFoodMenu: (pgId: string, body: { weekMenu: Record<string, { breakfast: string; lunch: string; dinner: string }> }) =>
+      request(`/owner/pgs/${pgId}/food-menu`, { method: "PUT", body: JSON.stringify(body) }),
   },
 
   admin: {

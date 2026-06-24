@@ -134,6 +134,51 @@ export function useToggleBedStatus() {
   });
 }
 
+export function useCheckInGuest() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (params: {
+      bedId: string;
+      guestName: string;
+      guestPhone: string;
+      advancePaid: number;
+      checkInDate?: string;
+    }) => {
+      const { bedId, ...body } = params;
+      return api.owner.checkInGuest(bedId, body);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["owner-pgs"] });
+      queryClient.invalidateQueries({ queryKey: ["pgs"] });
+    },
+  });
+}
+
+export function useCheckOutGuest() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (bedId: string) => api.owner.deleteBedGuest(bedId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["owner-pgs"] });
+      queryClient.invalidateQueries({ queryKey: ["pgs"] });
+    },
+  });
+}
+
+export function useDeleteRoom() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (roomId: string) => api.owner.deleteRoom(roomId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["owner-pgs"] });
+      queryClient.invalidateQueries({ queryKey: ["pgs"] });
+    },
+  });
+}
+
 export function useAmenities() {
   return useQuery({
     queryKey: ["amenities"],

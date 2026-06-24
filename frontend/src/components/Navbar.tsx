@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { Menu, X, LogOut, Shield, Home, Building2 } from "lucide-react";
+import { Menu, X, LogOut, Shield, Home, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
@@ -38,6 +38,7 @@ const Navbar = () => {
     { label: "Dashboard", to: "/dashboard", active: location.pathname === "/dashboard" && ownerSection === "dashboard" },
     { label: "Hostels", to: "/dashboard?section=hostels", active: location.pathname === "/dashboard" && ownerSection === "hostels" },
     { label: "Rooms", to: "/dashboard?section=rooms", active: location.pathname === "/dashboard" && ownerSection === "rooms" },
+    { label: "Food Menu", to: "/dashboard?section=food-menu", active: location.pathname === "/dashboard" && ownerSection === "food-menu" },
   ];
 
   return (
@@ -95,8 +96,13 @@ const Navbar = () => {
                 </Button>
               )}
               {isOwner && (
-                <Button variant="outline" size="sm" onClick={() => navigate("/list-property")}>
-                  <Building2 className="w-4 h-4 mr-2" /> Add Hostel
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate("/profile")}
+                  className={location.pathname === "/profile" ? "border-primary/30" : ""}
+                >
+                  <User className="w-4 h-4 mr-2" /> Profile
                 </Button>
               )}
               <Button variant="ghost" size="sm" onClick={handleSignOut}>
@@ -141,8 +147,8 @@ const Navbar = () => {
               {user ? (
                 <>
                   {isOwner && (
-                    <Button variant="ghost" size="sm" className="justify-start" onClick={() => { navigate("/list-property"); setIsOpen(false); }}>
-                      <Building2 className="w-4 h-4 mr-2" /> Add Hostel
+                    <Button variant="ghost" size="sm" className="justify-start" onClick={() => { navigate("/profile"); setIsOpen(false); }}>
+                      <User className="w-4 h-4 mr-2" /> Profile
                     </Button>
                   )}
                   <Button variant="ghost" size="sm" className="justify-start" onClick={() => { handleSignOut(); setIsOpen(false); }}>

@@ -13,6 +13,7 @@ import ListProperty from "./pages/ListProperty.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import AdminDashboard from "./pages/AdminDashboard.tsx";
 import TenantDashboard from "./pages/TenantDashboard.tsx";
+import ProfilePage from "./pages/ProfilePage.tsx";
 
 const queryClient = new QueryClient();
 
@@ -32,6 +33,7 @@ const App = () => (
             <Route path="/list-property" element={<ListProperty />} />
             <Route path="/admin" element={<AdminDashboard />} />
             <Route path="/my-dashboard" element={<TenantDashboard />} />
+            <Route path="/profile" element={<ProfilePage />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
