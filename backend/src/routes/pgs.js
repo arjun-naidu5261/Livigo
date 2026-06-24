@@ -120,17 +120,27 @@ async function buildPGAvailability(filters = {}, userId = null, userRoles = []) 
     }
   }
 
+  if (filters.sharing) {
+    const wantedSharing = filters.sharing.split(",").map(Number).filter(n => !isNaN(n));
+    if (wantedSharing.length > 0) {
+      results = results.filter((pg) => {
+        const pgRooms = roomsByPg[pg.id] || [];
+        return pgRooms.some((r) => wantedSharing.includes(r.sharing_type));
+      });
+    }
+  }
+
   return results;
 }
 
 router.get("/", optionalAuth, async (req, res) => {
   try {
-    const { city, gender, search, amenities } = req.query;
+    const { city, gender, search, amenities, sharing } = req.query;
     const genderMap = { Boys: "boys", Girls: "girls", "Co-living": "coliving" };
     const mappedGender = gender && gender !== "All" ? genderMap[gender] || gender : undefined;
 
     const results = await buildPGAvailability(
-      { city, gender: mappedGender, search, amenities },
+      { city, gender: mappedGender, search, amenities, sharing },
       req.userId,
       req.userRoles || []
     );

@@ -1,3 +1,7 @@
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import multer from "multer";
 import { Router } from "express";
 import { Booking } from "../models/Booking.js";
 import { PaymentDue } from "../models/PaymentDue.js";
@@ -7,11 +11,30 @@ import { PG } from "../models/PG.js";
 import { Room } from "../models/Room.js";
 import { Bed } from "../models/Bed.js";
 import { User } from "../models/User.js";
+import { TenantDocument } from "../models/TenantDocument.js";
 import { authenticate } from "../middleware/auth.js";
 import { formatDoc } from "../utils/helpers.js";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const uploadsDir = path.join(__dirname, "../../uploads/documents");
+fs.mkdirSync(uploadsDir, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadsDir),
+  filename: (_req, file, cb) => {
+    const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+    cb(null, `${unique}${path.extname(file.originalname)}`);
+  },
+});
+
+const upload = multer({ storage });
+
 const router = Router();
 router.use(authenticate);
+
+function publicUrl(filename) {
+  return `/uploads/documents/${filename}`;
+}
 
 router.get("/bookings", async (req, res) => {
   try {
@@ -156,6 +179,35 @@ router.patch("/profile", async (req, res) => {
     if (req.body.phone !== undefined) user.phone = req.body.phone;
     await user.save();
     res.json(formatDoc(user));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/documents", async (req, res) => {
+  try {
+    const docs = await TenantDocument.find({ user_id: req.userId }).sort({ created_at: -1 });
+    res.json(docs.map(formatDoc));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/documents/upload", upload.single("document"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+    const { title, docType } = req.body;
+    
+    const doc = await TenantDocument.create({
+      user_id: req.userId,
+      title: title || "Uploaded Document",
+      doc_type: docType || "kyc",
+      file_url: publicUrl(req.file.filename),
+    });
+
+    res.status(201).json(formatDoc(doc));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -165,6 +165,9 @@ export const api = {
     announcements: () => request("/tenant/announcements"),
     updateProfile: (body: { fullName?: string; phone?: string }) =>
       request("/tenant/profile", { method: "PATCH", body: JSON.stringify(body) }),
+    documents: () => request("/tenant/documents"),
+    uploadDocument: (data: FormData) =>
+      request("/tenant/documents/upload", { method: "POST", body: data }),
   },
 };
 

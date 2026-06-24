@@ -2,7 +2,8 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Home, Ticket, IndianRupee, Bell, User, CalendarDays,
-  Plus, CheckCircle, Clock, AlertCircle, Megaphone, CreditCard
+  Plus, CheckCircle, Clock, AlertCircle, Megaphone, CreditCard,
+  FileText, UploadCloud, CheckCircle2, FileUp, XCircle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,11 +17,12 @@ import {
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useAuth } from "@/contexts/AuthContext";
+import { resolveMediaUrl } from "@/lib/api";
 import {
   useTenantBookings, useTenantPaymentDues, useMarkPaymentPaid,
   useTenantTickets, useCreateTenantTicket,
   useTenantAnnouncements, useRealtimeAnnouncements,
-  useUpdateProfile
+  useUpdateProfile, useTenantDocuments, useUploadTenantDocument
 } from "@/hooks/use-tenant";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
@@ -53,9 +55,11 @@ const TenantDashboard = () => {
   const { data: paymentDues } = useTenantPaymentDues();
   const { data: tickets } = useTenantTickets();
   const { data: announcements } = useTenantAnnouncements();
+  const { data: documents, isLoading: loadingDocs } = useTenantDocuments();
   const markPaid = useMarkPaymentPaid();
   const createTicket = useCreateTenantTicket();
   const updateProfile = useUpdateProfile();
+  const uploadDoc = useUploadTenantDocument();
   useRealtimeAnnouncements();
 
   // Ticket form
@@ -72,6 +76,11 @@ const TenantDashboard = () => {
   // Profile form
   const [editName, setEditName] = useState(profile?.full_name || "");
   const [editPhone, setEditPhone] = useState(profile?.phone || "");
+
+  // Document form
+  const [docTitle, setDocTitle] = useState("");
+  const [docType, setDocType] = useState("kyc");
+  const [docFile, setDocFile] = useState<File | null>(null);
 
   if (!user) { navigate("/auth"); return null; }
 
@@ -107,6 +116,26 @@ const TenantDashboard = () => {
       await updateProfile.mutateAsync({ fullName: editName, phone: editPhone });
       toast.success("Profile updated!");
     } catch (err: any) { toast.error(err.message); }
+  };
+
+  const handleUploadDoc = async () => {
+    if (!docFile || !docTitle) {
+      toast.error("Please provide a title and select a file.");
+      return;
+    }
+    const formData = new FormData();
+    formData.append("title", docTitle);
+    formData.append("docType", docType);
+    formData.append("document", docFile);
+
+    try {
+      await uploadDoc.mutateAsync(formData);
+      toast.success("Document uploaded successfully!");
+      setDocTitle("");
+      setDocFile(null);
+    } catch (err: any) {
+      toast.error(err.message || "Upload failed");
+    }
   };
 
   return (
@@ -156,10 +185,11 @@ const TenantDashboard = () => {
 
           {/* Tabs */}
           <Tabs defaultValue="bookings" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-5">
+            <TabsList className="grid w-full grid-cols-6">
               <TabsTrigger value="bookings" className="text-xs sm:text-sm">Bookings</TabsTrigger>
               <TabsTrigger value="payments" className="text-xs sm:text-sm">Payments</TabsTrigger>
               <TabsTrigger value="tickets" className="text-xs sm:text-sm">Tickets</TabsTrigger>
+              <TabsTrigger value="documents" className="text-xs sm:text-sm">Docs</TabsTrigger>
               <TabsTrigger value="notices" className="text-xs sm:text-sm">Notices</TabsTrigger>
               <TabsTrigger value="profile" className="text-xs sm:text-sm">Profile</TabsTrigger>
             </TabsList>
@@ -405,6 +435,83 @@ const TenantDashboard = () => {
                   <Bell className="w-16 h-16 text-muted-foreground/30 mx-auto mb-4" />
                   <h3 className="text-lg font-semibold text-foreground mb-2">No Notices</h3>
                   <p className="text-sm text-muted-foreground">Announcements from your PG will appear here</p>
+                </div>
+              )}
+            </TabsContent>
+
+            {/* Documents Tab */}
+            <TabsContent value="documents">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-bold text-foreground">My Documents</h3>
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button size="sm" className="rounded-xl"><FileUp className="w-4 h-4 mr-1" /> Upload KYC</Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader><DialogTitle>Upload Document</DialogTitle></DialogHeader>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label>Document Type</Label>
+                        <select
+                          value={docType}
+                          onChange={(e) => setDocType(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg bg-secondary border border-border text-sm text-foreground"
+                        >
+                          <option value="kyc">KYC (Aadhar/PAN)</option>
+                          <option value="agreement">Lease Agreement</option>
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Title *</Label>
+                        <Input value={docTitle} onChange={(e) => setDocTitle(e.target.value)} placeholder="e.g. Aadhar Card" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>File *</Label>
+                        <Input type="file" onChange={(e) => setDocFile(e.target.files?.[0] || null)} className="file:mr-4 file:py-1 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 cursor-pointer" />
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
+                      <DialogClose asChild>
+                        <Button onClick={handleUploadDoc} disabled={uploadDoc.isPending}>Upload</Button>
+                      </DialogClose>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
+
+              {loadingDocs ? (
+                <div className="space-y-4">{[1, 2].map((i) => <Skeleton key={i} className="h-20 rounded-2xl" />)}</div>
+              ) : documents && documents.length > 0 ? (
+                <div className="space-y-3">
+                  {documents.map((doc: any) => (
+                    <div key={doc.id} className="p-4 rounded-xl border border-border bg-card flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+                          <FileText className="w-5 h-5 text-primary" />
+                        </div>
+                        <div>
+                          <h4 className="font-semibold text-foreground text-sm">{doc.title}</h4>
+                          <div className="flex items-center gap-2 mt-1">
+                            <Badge variant="secondary" className="text-[10px] uppercase">{doc.doc_type}</Badge>
+                            <span className="text-[10px] text-muted-foreground">{new Date(doc.created_at).toLocaleDateString("en-IN")}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        {doc.status === "verified" && <Badge className="bg-success/10 text-success border-success/20"><CheckCircle2 className="w-3 h-3 mr-1"/> Verified</Badge>}
+                        {doc.status === "pending" && <Badge className="bg-warning/10 text-warning border-warning/20"><Clock className="w-3 h-3 mr-1"/> Pending</Badge>}
+                        {doc.status === "rejected" && <Badge className="bg-destructive/10 text-destructive border-destructive/20"><XCircle className="w-3 h-3 mr-1"/> Rejected</Badge>}
+                        <Button variant="outline" size="sm" onClick={() => window.open(resolveMediaUrl(doc.file_url), '_blank')}>View</Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-20">
+                  <FileText className="w-16 h-16 text-muted-foreground/30 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-foreground mb-2">No Documents Found</h3>
+                  <p className="text-sm text-muted-foreground">Upload your KYC documents or lease agreements here.</p>
                 </div>
               )}
             </TabsContent>

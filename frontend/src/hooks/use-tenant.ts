@@ -81,3 +81,26 @@ export function useUpdateProfile() {
     },
   });
 }
+
+export function useTenantDocuments() {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ["tenant-documents", user?.id],
+    enabled: !!user,
+    queryFn: () => api.tenant.documents(),
+  });
+}
+
+export function useUploadTenantDocument() {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  return useMutation({
+    mutationFn: async (data: FormData) => {
+      if (!user) throw new Error("Must be logged in");
+      return api.tenant.uploadDocument(data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tenant-documents"] });
+    },
+  });
+}

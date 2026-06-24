@@ -9,6 +9,7 @@ export function usePGList(filters?: {
   gender?: string;
   search?: string;
   amenities?: string[];
+  sharing?: string;
 }) {
   return useQuery({
     queryKey: ["pgs", filters],
@@ -18,6 +19,7 @@ export function usePGList(filters?: {
       if (filters?.gender) params.gender = filters.gender;
       if (filters?.search) params.search = filters.search;
       if (filters?.amenities?.length) params.amenities = filters.amenities.join(",");
+      if (filters?.sharing) params.sharing = filters.sharing;
 
       return api.pgs.list(params) as Promise<PGAvailability[]>;
     },
